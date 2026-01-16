@@ -165,58 +165,112 @@ class FileServer {
   }
 
   Future<Response> _handleUpload(Request request, LoggerService logger, String clientIp) async {
-    final contentType = request.headers['content-type'];
-    
-    if (contentType == null || !contentType.contains('multipart/form-data')) {
-      return Response.badRequest(body: jsonEncode({'error': 'Invalid content type'}));
-    }
-
     try {
-      final body = await request.readAsString();
-      final boundary = contentType.split('boundary=')[1];
-      final parts = body.split('--$boundary');
+      // Read raw bytes from request
+      final bytes = await request.read().expand((chunk) => chunk).toList();
       
-      String? targetPath;
-      List<int>? fileData;
+      // Get content type and boundary
+      final contentType = request.headers['content-type'] ?? '';
+      if (!contentType.contains('multipart/form-data')) {
+        return Response.badRequest(body: jsonEncode({'error': 'Invalid content type'}));
+      }
+      
+      final boundaryMatch = RegExp(r'boundary=([^;]+)').firstMatch(contentType);
+      if (boundaryMatch == null) {
+        return Response.badRequest(body: jsonEncode({'error': 'No boundary found'}));
+      }
+      
+      final boundary = '--${boundaryMatch.group(1)}';
+      final boundaryBytes = utf8.encode(boundary);
+      
+      // Parse multipart data
       String? fileName;
-
+      String? targetPath;
+      List<int>? fileBytes;
+      
+      // Convert to string to find headers
+      final content = utf8.decode(bytes, allowMalformed: true);
+      final parts = content.split(boundary);
+      
       for (var part in parts) {
-        if (part.contains('name="path"')) {
-          final lines = part.split('\r\n');
-          targetPath = lines.last.trim();
-        } else if (part.contains('name="file"')) {
-          final headerEnd = part.indexOf('\r\n\r\n');
-          if (headerEnd != -1) {
-            final headers = part.substring(0, headerEnd);
-            final fileNameMatch = RegExp(r'filename="([^"]+)"').firstMatch(headers);
-            if (fileNameMatch != null) {
-              fileName = fileNameMatch.group(1);
+        // Check if this part contains a file
+        if (part.contains('filename=')) {
+          // Extract filename
+          final nameMatch = RegExp(r'filename="([^"]+)"').firstMatch(part);
+          if (nameMatch != null) {
+            fileName = nameMatch.group(1);
+          }
+          
+          // Find where actual file data starts (after headers)
+          final headerEndIndex = part.indexOf('\r\n\r\n');
+          if (headerEndIndex != -1) {
+            // Get the byte offset in original bytes array
+            final partStartInBytes = content.indexOf(part);
+            final dataStartInPart = headerEndIndex + 4;
+            final dataStartInBytes = partStartInBytes + dataStartInPart;
+            
+            // Find where this part ends (look for next boundary or end)
+            int dataEndInBytes = dataStartInBytes;
+            for (int i = dataStartInBytes; i < bytes.length - boundaryBytes.length; i++) {
+              bool isBoundary = true;
+              for (int j = 0; j < boundaryBytes.length; j++) {
+                if (i + j >= bytes.length || bytes[i + j] != boundaryBytes[j]) {
+                  isBoundary = false;
+                  break;
+                }
+              }
+              if (isBoundary) {
+                dataEndInBytes = i;
+                break;
+              }
             }
             
-            final dataStart = headerEnd + 4;
-            final dataEnd = part.lastIndexOf('\r\n');
-            final data = part.substring(dataStart, dataEnd);
-            fileData = data.codeUnits;
+            if (dataEndInBytes > dataStartInBytes) {
+              // Remove trailing \r\n before boundary
+              int endPos = dataEndInBytes;
+              if (endPos >= 2 && bytes[endPos - 2] == 13 && bytes[endPos - 1] == 10) {
+                endPos -= 2;
+              }
+              if (endPos > dataStartInBytes) {
+                fileBytes = bytes.sublist(dataStartInBytes, endPos);
+              }
+            }
+          }
+        }
+        // Check if this part contains the path field
+        else if (part.contains('name="path"')) {
+          final headerEndIndex = part.indexOf('\r\n\r\n');
+          if (headerEndIndex != -1) {
+            final dataStart = headerEndIndex + 4;
+            final lines = part.substring(dataStart).split('\r\n');
+            if (lines.isNotEmpty) {
+              targetPath = lines[0].trim();
+            }
           }
         }
       }
-
-      if (fileName == null || fileData == null) {
-        return Response.badRequest(body: jsonEncode({'error': 'Invalid file data'}));
+      
+      if (fileName == null || fileBytes == null || fileBytes.isEmpty) {
+        return Response.badRequest(body: jsonEncode({'error': 'No valid file found'}));
       }
 
+      // Get target directory
       final baseDir = await _getStorageDirectory();
       final path = targetPath ?? '';
-      final filePath = path.isEmpty ? fileName : '$path/$fileName';
-      final file = File('${baseDir.path}/$filePath');
+      final fullPath = path.isEmpty ? fileName : '$path/$fileName';
+      final file = File('${baseDir.path}/$fullPath');
 
       await file.parent.create(recursive: true);
-      await file.writeAsBytes(fileData);
+      await file.writeAsBytes(fileBytes);
 
-      await logger.log(clientIp, 'UPLOAD: $filePath');
+      await logger.log(clientIp, 'UPLOAD: $fullPath (${fileBytes.length} bytes)');
 
-      return Response.ok(jsonEncode({'success': true, 'path': filePath}));
-    } catch (e) {
+      return Response.ok(
+        jsonEncode({'success': true, 'path': fullPath}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e, stackTrace) {
+      print('Upload error: $e\n$stackTrace');
       return Response.internalServerError(
         body: jsonEncode({'error': 'Upload failed: $e'}),
       );
