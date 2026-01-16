@@ -5,6 +5,7 @@ A Flutter-based mobile file server application for Android 14+ that allows local
 ## 📖 Documentation
 
 - **[Setup Guide](SETUP.md)** - Installation and configuration instructions
+- **[Docker Build Guide](DOCKER_BUILD.md)** - Build APK using Docker (no Flutter install needed)
 - **[API Documentation](API.md)** - Complete API reference for developers
 - **[Testing Guide](TESTING.md)** - Comprehensive testing checklist
 - **[Security Considerations](SECURITY.md)** - Security warnings and best practices
@@ -55,6 +56,23 @@ The app requests the following permissions for maximum file access:
 - `READ_MEDIA_IMAGES/VIDEO/AUDIO` - For media access on Android 13+
 
 ## 🚀 Quick Start
+
+### Option 1: Build with Docker (Recommended - No Flutter installation needed)
+
+```bash
+# Linux/Mac
+./build-apk.sh
+
+# Windows
+build-apk.bat
+
+# Or manually
+docker run --rm -v $(pwd)/dist:/dist fileserveapp-builder
+```
+
+The APK will be in `./dist/app-release.apk`. See [Docker Build Guide](DOCKER_BUILD.md) for details.
+
+### Option 2: Build with Flutter
 
 1. Clone the repository
    ```bash

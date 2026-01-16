@@ -57,3 +57,6 @@ gradlew.bat
 /android/local.properties
 /android/.externalNativeBuild/
 /android/.cxx/
+
+# Docker build output
+/dist/

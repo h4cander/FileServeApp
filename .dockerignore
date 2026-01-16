@@ -1,0 +1,41 @@
+# Ignore build artifacts
+build/
+dist/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# Ignore version control
+.git/
+.gitignore
+.gitattributes
+
+# Ignore IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Ignore documentation (not needed for build)
+*.md
+!README.md
+
+# Ignore Android build artifacts
+android/.gradle/
+android/gradle/
+android/captures/
+android/local.properties
+android/.externalNativeBuild/
+android/.cxx/
+android/app/debug
+android/app/profile
+android/app/release
+
+# Ignore temporary files
+*.log
+*.swp
+.DS_Store
