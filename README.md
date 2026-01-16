@@ -7,6 +7,7 @@ A Flutter-based mobile file server application for Android 14+ that allows local
 - **[Setup Guide](SETUP.md)** - Installation and configuration instructions
 - **[API Documentation](API.md)** - Complete API reference for developers
 - **[Testing Guide](TESTING.md)** - Comprehensive testing checklist
+- **[Security Considerations](SECURITY.md)** - Security warnings and best practices
 - **[Icon Setup](ICON_SETUP.md)** - How to add custom app icons
 
 ## ✨ Features
