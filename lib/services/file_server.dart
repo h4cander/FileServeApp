@@ -188,10 +188,14 @@ class FileServer {
       String? targetPath;
       List<int>? fileBytes;
       
-      // Convert to string to find headers
+      // Convert to string to find headers (allowMalformed is used because binary file data
+      // may be present in the multipart body, which is not valid UTF-8. We only need the
+      // headers to be readable, and we extract binary data directly from bytes array)
       final content = utf8.decode(bytes, allowMalformed: true);
       final parts = content.split(boundary);
       
+      // Note: This parsing method is O(n*m) where n is content size and m is number of parts.
+      // For very large files, consider using a streaming multipart parser library.
       for (var part in parts) {
         // Check if this part contains a file
         if (part.contains('filename=')) {
@@ -317,8 +321,10 @@ class FileServer {
     final oldFile = File('${baseDir.path}/$oldPath');
     final oldDir = Directory('${baseDir.path}/$oldPath');
 
-    final parentPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1);
-    final newPath = '$parentPath$newName';
+    // Handle path for files in root vs subdirectories
+    final lastSlashIndex = oldPath.lastIndexOf('/');
+    final parentPath = lastSlashIndex >= 0 ? oldPath.substring(0, lastSlashIndex + 1) : '';
+    final newPath = parentPath.isEmpty ? newName : '$parentPath$newName';
     final newFile = File('${baseDir.path}/$newPath');
 
     if (await oldFile.exists()) {
@@ -353,6 +359,8 @@ class FileServer {
   }
 
   Response _serveIndexHtml() {
+    // Note: Language is set to zh-TW (Traditional Chinese) as per requirements.
+    // To support other languages, consider parameterizing this or using i18n.
     final html = '''
 <!DOCTYPE html>
 <html lang="zh-TW">
