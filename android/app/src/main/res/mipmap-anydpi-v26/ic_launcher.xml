@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This is a placeholder icon. Replace with actual app icons -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@android:color/white"/>
+    <foreground>
+        <inset
+            android:drawable="@android:drawable/sym_def_app_icon"
+            android:inset="25%"/>
+    </foreground>
+</adaptive-icon>

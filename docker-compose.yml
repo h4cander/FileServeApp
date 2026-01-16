@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  flutter-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./dist:/dist
+    container_name: fileserveapp-builder
