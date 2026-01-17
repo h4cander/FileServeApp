@@ -1,1 +1,56 @@
 * -text
+
+## ----------
+## Binary files (never line-normalize, never diff/merge as text)
+## ----------
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.bmp binary
+*.tif binary
+*.tiff binary
+*.ico binary
+*.icns binary
+
+# Fonts
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Archives / bundles
+*.zip binary
+*.7z binary
+*.rar binary
+*.tar binary
+*.gz binary
+*.tgz binary
+*.bz2 binary
+*.xz binary
+
+# Android/iOS build artifacts & libraries
+*.apk binary
+*.aab binary
+*.aar binary
+*.jar binary
+*.keystore binary
+*.jks binary
+*.so binary
+*.a binary
+*.dylib binary
+*.framework binary
+
+# Media
+*.mp4 binary
+*.m4v binary
+*.mov binary
+*.mp3 binary
+*.wav binary
+*.aac binary
+
+# Documents
+*.pdf binary
