@@ -23,7 +23,7 @@ public class FileServerService extends Service {
         logWriter = new LogWriter(getFilesDir());
         
         // 啟動服務器線程
-        if (serverThread == null || !serverThread.isAlive()) {
+        if (serverThread == null || !serverThread.isServerAlive()) {
             serverThread = new FileServerThread(getFilesDir(), logWriter);
             serverThread.start();
             logWriter.log("INFO", "127.0.0.1", "SERVICE_START", "File server started on port 8080");

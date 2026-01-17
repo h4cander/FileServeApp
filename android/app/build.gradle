@@ -6,13 +6,13 @@ repositories {
 }
 
 android {
-    compileSdk 35
+    compileSdk 34
     namespace 'com.fileserveapp'
 
     defaultConfig {
         applicationId "com.fileserveapp"
         minSdk 34
-        targetSdk 35
+        targetSdk 34
         versionCode 1
         versionName "1.0.0"
     }
@@ -50,4 +50,5 @@ android {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }

@@ -1,19 +1,18 @@
 package com.fileserveapp;
 
 import android.util.Log;
-import com.sun.net.httpserver.*;
+import fi.iki.elonen.NanoHTTPD;
 import java.io.*;
-import java.net.InetSocketAddress;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.*;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 public class FileServerThread extends Thread {
     private static final String TAG = "FileServerThread";
     private static final int PORT = 8080;
-    private HttpServer server;
+    private AndroidHttpServer server;
     private File baseDir;
     private LogWriter logWriter;
     private volatile boolean running = false;
@@ -27,70 +26,84 @@ public class FileServerThread extends Thread {
     @Override
     public void run() {
         try {
-            server = HttpServer.create(new InetSocketAddress(PORT), 0);
+            server = new AndroidHttpServer(PORT);
+            server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
             running = true;
-            
-            // 靜態文件處理
-            server.createContext("/", new StaticHandler());
-            
-            // API 端點
-            server.createContext("/api/list", new ListHandler());
-            server.createContext("/api/get", new GetHandler());
-            server.createContext("/api/upload", new UploadHandler());
-            server.createContext("/api/delete", new DeleteHandler());
-            server.createContext("/api/rename", new RenameHandler());
-            server.createContext("/api/logs", new LogsHandler());
-            
-            server.start();
             Log.d(TAG, "File Server started on port " + PORT);
-        } catch (IOException e) {
+            
+            while (running) {
+                Thread.sleep(1000);
+            }
+        } catch (IOException | InterruptedException e) {
             Log.e(TAG, "Error starting file server", e);
+        } finally {
+            if (server != null) {
+                server.stop();
+            }
         }
     }
 
     public void stopServer() {
         running = false;
         if (server != null) {
-            server.stop(0);
+            server.stop();
         }
     }
 
-    public boolean isAlive() {
-        return running && server != null;
+    public boolean isServerAlive() {
+        return running && server != null && server.isAlive();
     }
 
-    // 靜態文件處理
-    class StaticHandler implements HttpHandler {
+    private class AndroidHttpServer extends NanoHTTPD {
+        public AndroidHttpServer(int port) {
+            super(port);
+        }
+
         @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String path = exchange.getRequestURI().getPath();
-            
-            if (path.equals("/") || path.equals("")) {
-                path = "/index.html";
+        public Response serve(IHTTPSession session) {
+            String uri = session.getUri();
+            Method method = session.getMethod();
+
+            try {
+                if (uri.equals("/") || !uri.startsWith("/api/")) {
+                    return serveStaticFile(uri);
+                } else if (uri.equals("/api/list")) {
+                    return handleList(session);
+                } else if (uri.equals("/api/get")) {
+                    return handleGet(session);
+                } else if (uri.equals("/api/upload") && method == Method.POST) {
+                    return handleUpload(session);
+                } else if (uri.equals("/api/delete")) {
+                    return handleDelete(session);
+                } else if (uri.equals("/api/rename") && method == Method.POST) {
+                    return handleRename(session);
+                } else if (uri.equals("/api/logs")) {
+                    return handleLogs(session);
+                }
+                return newFixedLengthResponse(Response.Status.NOT_FOUND, NanoHTTPD.MIME_PLAINTEXT, "Not Found");
+            } catch (Exception e) {
+                Log.e(TAG, "Error handling request: " + uri, e);
+                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, NanoHTTPD.MIME_PLAINTEXT, "Internal Error");
             }
-            
-            File file = new File(baseDir, "www" + path);
+        }
+
+        private Response serveStaticFile(String uri) {
+            if (uri.equals("/")) uri = "/index.html";
+            File file = new File(baseDir, "www" + uri);
             if (file.exists() && file.isFile()) {
-                exchange.getResponseHeaders().set("Content-Type", getMimeType(file));
-                byte[] bytes = Files.readAllBytes(file.toPath());
-                exchange.sendResponseHeaders(200, bytes.length);
-                exchange.getResponseBody().write(bytes);
-            } else {
-                String response = "404 Not Found";
-                exchange.sendResponseHeaders(404, response.length());
-                exchange.getResponseBody().write(response.getBytes());
+                try {
+                    return newChunkedResponse(Response.Status.OK, getMimeType(file.getName()), new FileInputStream(file));
+                } catch (FileNotFoundException e) {
+                    return newFixedLengthResponse(Response.Status.NOT_FOUND, NanoHTTPD.MIME_PLAINTEXT, "Not Found");
+                }
             }
-            exchange.close();
+            return newFixedLengthResponse(Response.Status.NOT_FOUND, NanoHTTPD.MIME_PLAINTEXT, "Not found");
         }
-    }
 
-    // 列出文件
-    class ListHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String path = exchange.getRequestURI().getQuery();
+        private Response handleList(IHTTPSession session) {
+            Map<String, String> params = session.getParms();
+            String path = params.get("path");
             if (path == null) path = "";
-            path = URLDecoder.decode(path.replace("path=", ""), StandardCharsets.UTF_8);
             
             File dir = new File(baseDir, "files/" + path);
             StringBuilder response = new StringBuilder("[");
@@ -108,202 +121,139 @@ public class FileServerThread extends Thread {
                     }
                 }
             }
-            
             response.append("]");
-            sendJson(exchange, response.toString());
-            logWriter.log("INFO", getClientIp(exchange), "LIST", path);
+            logWriter.log("INFO", session.getRemoteIpAddress(), "LIST", path);
+            return newJsonResponse(response.toString());
         }
-    }
 
-    // 獲取文件
-    class GetHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String path = exchange.getRequestURI().getQuery();
+        private Response handleGet(IHTTPSession session) {
+            Map<String, String> params = session.getParms();
+            String path = params.get("path");
             if (path == null) path = "";
-            path = URLDecoder.decode(path.replace("path=", ""), StandardCharsets.UTF_8);
             
             File file = new File(baseDir, "files/" + path);
             if (file.exists() && file.isFile()) {
-                exchange.getResponseHeaders().set("Content-Type", getMimeType(file));
-                exchange.getResponseHeaders().set("Content-Disposition", 
-                    "attachment; filename=\"" + file.getName() + "\"");
-                byte[] bytes = Files.readAllBytes(file.toPath());
-                exchange.sendResponseHeaders(200, bytes.length);
-                exchange.getResponseBody().write(bytes);
-                logWriter.log("INFO", getClientIp(exchange), "GET", path);
-            } else {
-                sendError(exchange, "File not found");
-            }
-            exchange.close();
-        }
-    }
-
-    // 上傳文件
-    class UploadHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            if ("POST".equals(exchange.getRequestMethod())) {
-                String path = exchange.getRequestHeaders().getFirst("X-File-Path");
-                if (path == null) path = "";
-                path = URLDecoder.decode(path, StandardCharsets.UTF_8);
-                
-                File dir = new File(baseDir, "files/" + path);
-                dir.mkdirs();
-                
-                String filename = exchange.getRequestHeaders().getFirst("X-File-Name");
-                if (filename == null) filename = "uploaded_file";
-                
-                File file = new File(dir, filename);
-                try (InputStream in = exchange.getRequestBody();
-                     FileOutputStream out = new FileOutputStream(file)) {
-                    byte[] buffer = new byte[4096];
-                    int len;
-                    while ((len = in.read(buffer)) != -1) {
-                        out.write(buffer, 0, len);
-                    }
+                try {
+                    Response res = newChunkedResponse(Response.Status.OK, getMimeType(file.getName()), new FileInputStream(file));
+                    res.addHeader("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
+                    logWriter.log("INFO", session.getRemoteIpAddress(), "GET", path);
+                    return res;
+                } catch (FileNotFoundException e) {
+                    return newFixedLengthResponse(Response.Status.NOT_FOUND, NanoHTTPD.MIME_PLAINTEXT, "Not Found");
                 }
-                
-                sendJson(exchange, "{\"success\":true,\"path\":\"" + path + filename + "\"}");
-                logWriter.log("INFO", getClientIp(exchange), "UPLOAD", path + filename);
             }
-            exchange.close();
+            return newFixedLengthResponse(Response.Status.NOT_FOUND, NanoHTTPD.MIME_PLAINTEXT, "Not found");
         }
-    }
 
-    // 刪除文件
-    class DeleteHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String path = exchange.getRequestURI().getQuery();
+        private Response handleUpload(IHTTPSession session) throws IOException, ResponseException {
+            Map<String, String> headers = session.getHeaders();
+            String path = headers.get("x-file-path");
             if (path == null) path = "";
-            path = URLDecoder.decode(path.replace("path=", ""), StandardCharsets.UTF_8);
+            
+            String filename = headers.get("x-file-name");
+            if (filename == null) filename = "uploaded_file";
+
+            Map<String, String> files = new HashMap<>();
+            session.parseBody(files);
+            
+            String tmpPath = files.get("content");
+            if (tmpPath != null) {
+                File tmpFile = new File(tmpPath);
+                File targetFile = new File(new File(baseDir, "files/" + path), filename);
+                targetFile.getParentFile().mkdirs();
+                if (targetFile.exists()) targetFile.delete();
+                tmpFile.renameTo(targetFile);
+            }
+            
+            logWriter.log("INFO", session.getRemoteIpAddress(), "UPLOAD", path + "/" + filename);
+            return newJsonResponse("{\"success\":true}");
+        }
+
+        private Response handleDelete(IHTTPSession session) {
+            Map<String, String> params = session.getParms();
+            String path = params.get("path");
+            if (path == null) path = "";
             
             File file = new File(baseDir, "files/" + path);
+            boolean success = false;
             if (file.exists()) {
-                boolean success = deleteRecursive(file);
-                sendJson(exchange, "{\"success\":" + success + "}");
-                logWriter.log("INFO", getClientIp(exchange), "DELETE", path);
-            } else {
-                sendError(exchange, "File not found");
+                success = deleteRecursive(file);
             }
-            exchange.close();
+            logWriter.log("INFO", session.getRemoteIpAddress(), "DELETE", path);
+            return newJsonResponse("{\"success\":" + success + "}");
         }
-    }
 
-    // 重命名文件
-    class RenameHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            if ("POST".equals(exchange.getRequestMethod())) {
-                BufferedReader in = new BufferedReader(new InputStreamReader(exchange.getRequestBody()));
-                StringBuilder body = new StringBuilder();
-                String line;
-                while ((line = in.readLine()) != null) {
-                    body.append(line);
-                }
-                
-                String oldPath = extractJsonValue(body.toString(), "oldPath");
-                String newName = extractJsonValue(body.toString(), "newName");
-                
-                File oldFile = new File(baseDir, "files/" + oldPath);
-                File newFile = new File(oldFile.getParent(), newName);
-                
-                if (oldFile.exists()) {
-                    boolean success = oldFile.renameTo(newFile);
-                    sendJson(exchange, "{\"success\":" + success + "}");
-                    logWriter.log("INFO", getClientIp(exchange), "RENAME", oldPath + " -> " + newName);
-                } else {
-                    sendError(exchange, "File not found");
-                }
+        private Response handleRename(IHTTPSession session) throws IOException, ResponseException {
+            Map<String, String> files = new HashMap<>();
+            session.parseBody(files);
+            String postData = files.get("postData");
+            
+            String oldPath = extractJsonValue(postData, "oldPath");
+            String newName = extractJsonValue(postData, "newName");
+            
+            File oldFile = new File(baseDir, "files/" + oldPath);
+            File newFile = new File(oldFile.getParent(), newName);
+            
+            boolean success = false;
+            if (oldFile.exists()) {
+                success = oldFile.renameTo(newFile);
             }
-            exchange.close();
+            logWriter.log("INFO", session.getRemoteIpAddress(), "RENAME", oldPath + " -> " + newName);
+            return newJsonResponse("{\"success\":" + success + "}");
         }
-    }
 
-    // 日誌處理
-    class LogsHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String date = exchange.getRequestURI().getQuery();
+        private Response handleLogs(IHTTPSession session) {
+            Map<String, String> params = session.getParms();
+            String date = params.get("date");
             if (date == null || date.isEmpty()) {
-                date = new java.text.SimpleDateFormat("yyyyMMdd").format(new Date());
-            } else {
-                date = date.replace("date=", "");
+                date = new SimpleDateFormat("yyyyMMdd").format(new Date());
             }
             
             File logFile = new File(logWriter.getLogDir(), "file-server-" + date + ".log");
-            String response;
-            
+            String response = "[]";
             if (logFile.exists()) {
-                response = new String(Files.readAllBytes(logFile.toPath()));
-            } else {
-                response = "[]";
+                try {
+                    response = new String(Files.readAllBytes(logFile.toPath()));
+                } catch (IOException e) {}
             }
-            
-            sendJson(exchange, response);
-            exchange.close();
+            return newJsonResponse(response);
         }
-    }
 
-    // 工具方法
-    private void sendJson(HttpExchange exchange, String json) throws IOException {
-        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
-        exchange.sendResponseHeaders(200, bytes.length);
-        exchange.getResponseBody().write(bytes);
-        exchange.close();
-    }
-
-    private void sendError(HttpExchange exchange, String message) throws IOException {
-        String json = "{\"error\":\"" + message + "\"}";
-        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-        exchange.sendResponseHeaders(400, bytes.length);
-        exchange.getResponseBody().write(bytes);
-        exchange.close();
-    }
-
-    private String getMimeType(File file) {
-        String name = file.getName();
-        if (name.endsWith(".html")) return "text/html";
-        if (name.endsWith(".js")) return "application/javascript";
-        if (name.endsWith(".css")) return "text/css";
-        if (name.endsWith(".json")) return "application/json";
-        if (name.endsWith(".png")) return "image/png";
-        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
-        if (name.endsWith(".gif")) return "image/gif";
-        if (name.endsWith(".pdf")) return "application/pdf";
-        return "application/octet-stream";
-    }
-
-    private String getClientIp(HttpExchange exchange) {
-        String ip = exchange.getRequestHeaders().getFirst("X-Forwarded-For");
-        if (ip == null || ip.isEmpty()) {
-            ip = exchange.getRemoteAddress().getAddress().getHostAddress();
+        private Response newJsonResponse(String json) {
+            Response res = newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", json);
+            res.addHeader("Access-Control-Allow-Origin", "*");
+            return res;
         }
-        return ip;
-    }
 
-    private boolean deleteRecursive(File file) {
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) {
-                for (File child : children) {
-                    deleteRecursive(child);
+        private String getMimeType(String filename) {
+            if (filename.endsWith(".html")) return "text/html";
+            if (filename.endsWith(".js")) return "application/javascript";
+            if (filename.endsWith(".css")) return "text/css";
+            if (filename.endsWith(".json")) return "application/json";
+            if (filename.endsWith(".png")) return "image/png";
+            if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) return "image/jpeg";
+            return "application/octet-stream";
+        }
+
+        private boolean deleteRecursive(File file) {
+            if (file.isDirectory()) {
+                File[] children = file.listFiles();
+                if (children != null) {
+                    for (File child : children) deleteRecursive(child);
                 }
             }
+            return file.delete();
         }
-        return file.delete();
-    }
 
-    private String extractJsonValue(String json, String key) {
-        String search = "\"" + key + "\":\"";
-        int start = json.indexOf(search);
-        if (start == -1) return "";
-        start += search.length();
-        int end = json.indexOf("\"", start);
-        return json.substring(start, end);
+        private String extractJsonValue(String json, String key) {
+            if (json == null) return "";
+            String search = "\"" + key + "\":\"";
+            int start = json.indexOf(search);
+            if (start == -1) return "";
+            start += search.length();
+            int end = json.indexOf("\"", start);
+            if (end == -1) return "";
+            return json.substring(start, end);
+        }
     }
 }
