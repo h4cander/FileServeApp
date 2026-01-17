@@ -116,4 +116,7 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+    
+    // NanoHTTPD for file server
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }
