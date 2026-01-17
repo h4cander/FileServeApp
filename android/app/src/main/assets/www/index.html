@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Server</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+        }
+
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .toolbar {
+            background: white;
+            border-bottom: 1px solid #ddd;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toolbar button {
+            padding: 8px 16px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .toolbar button:hover {
+            background: #2980b9;
+        }
+
+        .toolbar button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .path-display {
+            flex: 1;
+            padding: 0 15px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .file-browser {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 15px;
+        }
+
+        .file-item {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .file-item:hover {
+            border-color: #3498db;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .file-item.selected {
+            background: #ecf0f1;
+            border-color: #3498db;
+        }
+
+        .file-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .file-name {
+            font-size: 12px;
+            word-break: break-all;
+            color: #333;
+        }
+
+        .context-menu {
+            position: fixed;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            min-width: 150px;
+        }
+
+        .context-menu-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+
+        .context-menu-item:last-child {
+            border-bottom: none;
+        }
+
+        .context-menu-item:hover {
+            background: #f5f5f5;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            min-width: 300px;
+        }
+
+        .modal-content h2 {
+            margin-bottom: 20px;
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-buttons button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .modal-buttons button.confirm {
+            background: #27ae60;
+            color: white;
+        }
+
+        .modal-buttons button.cancel {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .breadcrumb {
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .breadcrumb span {
+            cursor: pointer;
+            color: #3498db;
+            margin: 0 5px;
+        }
+
+        .breadcrumb span:hover {
+            text-decoration: underline;
+        }
+
+        .upload-area {
+            border: 2px dashed #3498db;
+            border-radius: 4px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+
+        .upload-area.drag-over {
+            background: #ecf0f1;
+            border-color: #2980b9;
+        }
+
+        .status-bar {
+            background: #34495e;
+            color: white;
+            padding: 10px 20px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="sidebar">
+            <h3 style="margin-bottom: 20px;">📁 快速訪問</h3>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button @click="navigateTo('')" style="background: none; color: #ecf0f1; text-align: left; cursor: pointer; padding: 5px;">
+                    📂 根目錄
+                </button>
+                <button @click="navigateTo('Downloads')" style="background: none; color: #ecf0f1; text-align: left; cursor: pointer; padding: 5px;">
+                    ⬇️ 下載
+                </button>
+                <button @click="navigateTo('Documents')" style="background: none; color: #ecf0f1; text-align: left; cursor: pointer; padding: 5px;">
+                    📄 文檔
+                </button>
+                <button @click="navigateTo('Pictures')" style="background: none; color: #ecf0f1; text-align: left; cursor: pointer; padding: 5px;">
+                    🖼️ 圖片
+                </button>
+            </div>
+
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #34495e;">
+
+            <h3 style="margin-bottom: 10px;">📅 最近文件</h3>
+            <div style="font-size: 12px; color: #bdc3c7;">
+                暫無最近文件
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="toolbar">
+                <button @click="goBack" :disabled="currentPath === ''">⬅️ 返回</button>
+                <button @click="refreshFiles">🔄 刷新</button>
+                <button @click="showNewFolderDialog">➕ 新建文件夾</button>
+                <button @click="triggerFileUpload">📤 上傳文件</button>
+                <input type="file" ref="fileInput" style="display: none;" @change="handleFileUpload" multiple>
+                <div class="path-display">{{ currentPath || '根目錄' }}</div>
+            </div>
+
+            <div class="file-browser">
+                <div class="breadcrumb">
+                    <span @click="navigateTo('')">📁 根目錄</span>
+                    <span v-for="(part, index) in breadcrumbs" :key="index" @click="navigateTo(breadcrumbs.slice(0, index + 1).join('/'))">
+                        / {{ part }}
+                    </span>
+                </div>
+
+                <div class="upload-area" @dragover.prevent="isDragOver = true" @dragleave.prevent="isDragOver = false" @drop.prevent="handleDrop" :class="{ 'drag-over': isDragOver }">
+                    <p>🔗 拖拉文件到此上傳</p>
+                </div>
+
+                <div v-if="files.length === 0" style="text-align: center; color: #999; padding: 40px;">
+                    📭 文件夾為空
+                </div>
+
+                <div class="file-grid">
+                    <div v-for="file in files" :key="file.name" 
+                         class="file-item"
+                         :class="{ selected: selectedFiles.includes(file.name) }"
+                         @click="selectFile(file, $event)"
+                         @dblclick="openFile(file)"
+                         @contextmenu.prevent="showContextMenu($event, file)">
+                        <div class="file-icon">{{ file.isDir ? '📂' : getFileIcon(file.name) }}</div>
+                        <div class="file-name">{{ file.name }}</div>
+                        <div style="font-size: 10px; color: #999; margin-top: 5px;">
+                            {{ formatFileSize(file.size) }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-bar">
+                ✓ 已加載 {{ files.length }} 個文件 | 
+                <span v-if="selectedFiles.length > 0">{{ selectedFiles.length }} 個已選擇</span>
+                <span v-else>準備就緒</span>
+            </div>
+        </div>
+
+        <!-- 右鍵菜單 -->
+        <div v-if="contextMenu.visible" class="context-menu" :style="{ top: contextMenu.top + 'px', left: contextMenu.left + 'px' }">
+            <div class="context-menu-item" @click="downloadFile(contextMenu.file)">📥 下載</div>
+            <div class="context-menu-item" @click="renameFile(contextMenu.file)">✏️ 重命名</div>
+            <div class="context-menu-item" @click="deleteFile(contextMenu.file)" style="color: #e74c3c;">🗑️ 刪除</div>
+        </div>
+
+        <!-- 重命名對話框 -->
+        <div v-if="showRenameDialog" class="modal" @click.self="showRenameDialog = false">
+            <div class="modal-content">
+                <h2>重命名</h2>
+                <input v-model="renameInput" placeholder="輸入新名稱" @keyup.enter="confirmRename" @keyup.esc="showRenameDialog = false" autofocus>
+                <div class="modal-buttons">
+                    <button class="confirm" @click="confirmRename">確認</button>
+                    <button class="cancel" @click="showRenameDialog = false">取消</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 新建文件夾對話框 -->
+        <div v-if="showNewFolderDlg" class="modal" @click.self="showNewFolderDlg = false">
+            <div class="modal-content">
+                <h2>新建文件夾</h2>
+                <input v-model="newFolderName" placeholder="輸入文件夾名稱" @keyup.enter="createNewFolder" @keyup.esc="showNewFolderDlg = false" autofocus>
+                <div class="modal-buttons">
+                    <button class="confirm" @click="createNewFolder">確認</button>
+                    <button class="cancel" @click="showNewFolderDlg = false">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    files: [],
+                    currentPath: '',
+                    selectedFiles: [],
+                    contextMenu: {
+                        visible: false,
+                        top: 0,
+                        left: 0,
+                        file: null
+                    },
+                    showRenameDialog: false,
+                    renameInput: '',
+                    renameFile: null,
+                    showNewFolderDlg: false,
+                    newFolderName: '',
+                    isDragOver: false,
+                    API_BASE: 'http://127.0.0.1:8080/api'
+                };
+            },
+            computed: {
+                breadcrumbs() {
+                    return this.currentPath ? this.currentPath.split('/') : [];
+                }
+            },
+            mounted() {
+                this.refreshFiles();
+                document.addEventListener('click', () => {
+                    this.contextMenu.visible = false;
+                });
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'c' && e.ctrlKey) this.copyFiles();
+                    if (e.key === 'v' && e.ctrlKey) this.pasteFiles();
+                    if (e.key === 'Delete') this.deleteSelectedFiles();
+                });
+            },
+            methods: {
+                async refreshFiles() {
+                    try {
+                        const response = await fetch(`${this.API_BASE}/list?path=${this.currentPath}`);
+                        const data = await response.json();
+                        this.files = data.sort((a, b) => {
+                            if (a.isDir === b.isDir) return a.name.localeCompare(b.name);
+                            return b.isDir - a.isDir;
+                        });
+                    } catch (error) {
+                        console.error('加載文件失敗:', error);
+                        alert('加載文件失敗');
+                    }
+                },
+
+                openFile(file) {
+                    if (file.isDir) {
+                        this.navigateTo(this.currentPath ? `${this.currentPath}/${file.name}` : file.name);
+                    } else {
+                        this.downloadFile(file);
+                    }
+                },
+
+                navigateTo(path) {
+                    this.currentPath = path;
+                    this.selectedFiles = [];
+                    this.refreshFiles();
+                },
+
+                goBack() {
+                    const parts = this.currentPath.split('/');
+                    parts.pop();
+                    this.currentPath = parts.join('/');
+                    this.selectedFiles = [];
+                    this.refreshFiles();
+                },
+
+                selectFile(file, event) {
+                    if (event.ctrlKey) {
+                        const index = this.selectedFiles.indexOf(file.name);
+                        if (index > -1) {
+                            this.selectedFiles.splice(index, 1);
+                        } else {
+                            this.selectedFiles.push(file.name);
+                        }
+                    } else {
+                        this.selectedFiles = [file.name];
+                    }
+                },
+
+                showContextMenu(event, file) {
+                    this.contextMenu.visible = true;
+                    this.contextMenu.top = event.clientY;
+                    this.contextMenu.left = event.clientX;
+                    this.contextMenu.file = file;
+                },
+
+                renameFile(file) {
+                    this.renameFile = file;
+                    this.renameInput = file.name;
+                    this.showRenameDialog = true;
+                    this.contextMenu.visible = false;
+                },
+
+                confirmRename() {
+                    if (this.renameInput && this.renameInput !== this.renameFile.name) {
+                        fetch(`${this.API_BASE}/rename`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                oldPath: this.currentPath ? `${this.currentPath}/${this.renameFile.name}` : this.renameFile.name,
+                                newName: this.renameInput
+                            })
+                        }).then(() => {
+                            this.showRenameDialog = false;
+                            this.refreshFiles();
+                        });
+                    } else {
+                        this.showRenameDialog = false;
+                    }
+                },
+
+                async deleteFile(file) {
+                    if (confirm(`確認刪除 ${file.name}？`)) {
+                        const path = this.currentPath ? `${this.currentPath}/${file.name}` : file.name;
+                        await fetch(`${this.API_BASE}/delete?path=${path}`, { method: 'DELETE' });
+                        this.refreshFiles();
+                    }
+                },
+
+                deleteSelectedFiles() {
+                    if (this.selectedFiles.length > 0) {
+                        if (confirm(`確認刪除 ${this.selectedFiles.length} 個文件？`)) {
+                            this.selectedFiles.forEach(name => {
+                                const path = this.currentPath ? `${this.currentPath}/${name}` : name;
+                                fetch(`${this.API_BASE}/delete?path=${path}`, { method: 'DELETE' });
+                            });
+                            this.selectedFiles = [];
+                            setTimeout(() => this.refreshFiles(), 500);
+                        }
+                    }
+                },
+
+                downloadFile(file) {
+                    const path = this.currentPath ? `${this.currentPath}/${file.name}` : file.name;
+                    window.open(`${this.API_BASE}/get?path=${path}`, '_blank');
+                },
+
+                triggerFileUpload() {
+                    this.$refs.fileInput.click();
+                },
+
+                async handleFileUpload(event) {
+                    const files = event.target.files;
+                    for (let file of files) {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        
+                        await fetch(`${this.API_BASE}/upload`, {
+                            method: 'POST',
+                            headers: {
+                                'X-File-Path': this.currentPath,
+                                'X-File-Name': file.name
+                            },
+                            body: formData
+                        });
+                    }
+                    this.refreshFiles();
+                },
+
+                async handleDrop(event) {
+                    this.isDragOver = false;
+                    const files = event.dataTransfer.files;
+                    for (let file of files) {
+                        await fetch(`${this.API_BASE}/upload`, {
+                            method: 'POST',
+                            headers: {
+                                'X-File-Path': this.currentPath,
+                                'X-File-Name': file.name
+                            },
+                            body: file
+                        });
+                    }
+                    this.refreshFiles();
+                },
+
+                showNewFolderDialog() {
+                    this.newFolderName = '';
+                    this.showNewFolderDlg = true;
+                },
+
+                createNewFolder() {
+                    // 使用 upload API 創建文件夾（通過創建空文件）
+                    if (this.newFolderName) {
+                        this.showNewFolderDlg = false;
+                        // 實現方式：發送特殊請求給服務器創建目錄
+                        this.refreshFiles();
+                    }
+                },
+
+                copyFiles() {
+                    if (this.selectedFiles.length > 0) {
+                        localStorage.setItem('clipboard', JSON.stringify({
+                            operation: 'copy',
+                            path: this.currentPath,
+                            files: this.selectedFiles
+                        }));
+                    }
+                },
+
+                pasteFiles() {
+                    const clipboard = JSON.parse(localStorage.getItem('clipboard') || '{}');
+                    // 實現文件複製邏輯
+                },
+
+                getFileIcon(filename) {
+                    const ext = filename.split('.').pop().toLowerCase();
+                    const icons = {
+                        'pdf': '📄', 'doc': '📝', 'docx': '📝', 'txt': '📄',
+                        'jpg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'jpeg': '🖼️',
+                        'mp3': '🎵', 'mp4': '🎬', 'avi': '🎬', 'mkv': '🎬',
+                        'zip': '📦', 'rar': '📦', '7z': '📦', 'tar': '📦',
+                        'exe': '⚙️', 'apk': '📱', 'app': '📱'
+                    };
+                    return icons[ext] || '📋';
+                },
+
+                formatFileSize(bytes) {
+                    if (bytes === 0) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

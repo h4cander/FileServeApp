@@ -1,0 +1,13 @@
+node_modules/
+.gradle/
+.idea/
+*.apk
+*.jks
+*.log
+.env
+build/
+android/app/debug/
+android/app/release/
+*.keystore
+.DS_Store
+dist/

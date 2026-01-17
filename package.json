@@ -1,0 +1,33 @@
+{
+  "name": "fileserveapp",
+  "version": "1.0.0",
+  "description": "Mobile File Server - Share and manage files via web interface",
+  "main": "index.js",
+  "scripts": {
+    "android": "react-native run-android",
+    "android:build": "cd android && ./gradlew assembleRelease && cd ..",
+    "android:install": "cd android && ./gradlew installRelease && cd ..",
+    "start": "react-native start",
+    "test": "jest",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-native": "^0.72.4",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.22.0",
+    "@babel/preset-react": "^7.22.0",
+    "@react-native/babel-preset": "^0.72.0",
+    "babel-jest": "^29.5.0",
+    "jest": "^29.5.0",
+    "metro-react-native-babel-preset": "^0.72.0"
+  },
+  "jest": {
+    "preset": "react-native"
+  }
+}
