@@ -28,8 +28,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center"
-        android:layout_marginBottom="20dp"
-        android:spacing="12dp">
+        android:layout_marginBottom="20dp">
 
         <Button
             android:id="@+id/startButton"
@@ -71,7 +70,7 @@
             android:layout_height="wrap_content"
             android:text="暫無日誌"
             android:textSize="12sp"
-            android:textMonospace="true"
+            android:typeface="monospace"
             android:padding="12dp"
             android:background="#f5f5f5"
             android:scrollbars="vertical" />
